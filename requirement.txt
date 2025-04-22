@@ -1,0 +1,85 @@
+OBJECTIVE
+Build a unified training CSV per VIN that contains synchronized SoC and Voltage (VPD, VREST) inputs, ready to be joined later with vehicle features (make, model, year, etc.).
+
+🔁 INPUT FILES
+
+Category	File Name	Notes
+Embedded (SoC)	input.csv (Athena raw)	Has VIN, ESN, UTC timestamp, JSON blobs (SoC, IGN)
+output_expanded.csv (parsed)	Flattened SoC data, easier to work with
+Dongle (Voltage)	GD201_CODEX_14_SoCTraining_13Apr.xlsx	High-res voltage, parsed
+rawdatadongle.csv (Athena raw)	Original voltage ping source
+Inventory	Vehicle Inventory List ... embedded.xlsx
+... dongle.xlsx	VIN → ESN mapping only, no cross-match between dongle & embedded
+🧩 WHAT TO EXTRACT
+For every VIN, extract:
+
+
+Metric	Description
+VIN	from input or dongle
+ESN	traceability ID from both input sources
+SoC	from embedded input or parsed
+VPD	last voltage before IGN OFF (under load)
+VREST	first voltage after IGN ON (rested voltage)
+IGN State	from embedded or dongle – IGN ON/OFF
+Timestamp EDT	UTC → Eastern (America/New_York) time conversion
+⚠️ Note: Only some rows have VIN or IGN state—fill down as needed.
+
+📊 FINAL CSV STRUCTURE
+
+VIN	ESN	SoC	VPD	VREST	Timestamp (EDT)	IGN State
+And a secondary file:
+
+IGN Change Log
+A filtered CSV that only shows rows when ignition state flips (ON → OFF, OFF → ON). Useful for debugging and voltage classification (VPD vs VREST).
+
+🧠 CLASSIFICATION RULES
+To assign VPD / VREST:
+
+VPD = last voltage before IGN turns OFF
+
+VREST = first voltage after IGN turns ON
+
+You can detect this using IGN state transitions.
+
+💼 WHAT TO DO STEP BY STEP
+Step 1 – Parse Inputs
+Load:
+
+output_expanded.csv → extract SoC %, timestamp, IGN
+
+GD201_CODEX_14_SoCTraining_13Apr.xlsx → high-res voltage, timestamp, IGN
+
+input.csv and rawdatadongle.csv if you want to cross-check raw Athena
+
+Inventory files for VIN ↔ ESN mappings
+
+Step 2 – Normalize Timestamps
+Convert all timestamps to EDT (America/New_York)
+
+Fill down VIN and ESN where missing (common for Athena pings)
+
+Step 3 – Detect IGN Transitions
+Create a column IGN_Change where state flips from last row
+
+Extract these rows into a second CSV: IGN_Transitions.csv
+
+Step 4 – Annotate VPD and VREST
+For each IGN OFF, grab the voltage row just before → VPD
+
+For each IGN ON, grab the first voltage after → VREST
+
+Step 5 – Merge by VIN
+Join Embedded SoC data with Dongle voltage data on VIN (and ESN if necessary)
+
+Align rows so that each timestamped ping has:
+
+SoC %
+
+Voltage (classified as VPD/VREST or none)
+
+IGN State
+
+Step 6 – Output Final CSVs
+One master CSV with the structure described
+
+One secondary CSV only with rows where IGN flips
